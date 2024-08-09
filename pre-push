@@ -1,0 +1,171 @@
+#!/bin/bash
+
+# This pre-push script will ensure that:
+#
+# 1. if you're in a Rust repo, the version in Cargo.toml is updated.
+#
+# ... that's it (so far).
+
+# Handy tip: if you want to copy this hook to each of your local repositories:
+#
+# CD into the directory where your repos reside:
+#   cd ~/src (or ~/work or whatever)
+# Then do this (you'll need to edit the "cp" line):
+#   for hook_dir in */.git/hooks; do
+#     echo "Installing hook in $(dirname $(dirname $hook_dir))..."
+#     cp -p LOCATION-OF-THIS-FILE $hook_dir
+#   done
+
+main() {
+  # The pre-push hook is called with the following parameters:
+  # $1 -- Name of the remote to which the push is being done
+  # $2 -- URL to which the push is being done
+  #
+  # This script does not (yet) make use of these arguments.
+  local remote="$1" url="$2"
+
+  echo "In pre-push($remote, $url)"
+  init
+
+  examine_commits
+  ensure_cargo_version_is_updated
+
+  go_no_go
+}
+
+init() {
+  # Redirect all subsequent stdout to stderr.
+  exec 1>&2
+
+  FAIL_MSGS=
+  # Pushing a new branch will give us a remote OID of all zeros, so we need to compare against that.
+  # This command came from the pre-push.sample, and it converts the output of "git hash-object" into all zeros (rather
+  # than just hard-coding "0000000000000000000000000000000000000000"), presumably to handle future changes to
+  # the hash size.
+  ZERO=$(git hash-object --stdin </dev/null | tr '0-9a-f' '0')
+
+  # Git hooks are always run from the root of the repo. Sanity check:
+  if [[ ! -d .git ]]; then
+    echo "pre-push: '.git' directory not found; not being run from a git repo?"
+    exit 1
+  fi
+}
+
+# We're not doing anything with individual commits yet, but leaving this function here for future use.
+examine_commits() {
+  local prev_ref prev_oid remote_ref remote_oid range
+
+  # Information about the commits which are being pushed is supplied as lines to
+  # stdin in the form:
+  #   <local ref> <local oid> <remote ref> <remote oid>
+  while read -r prev_ref prev_oid remote_ref remote_oid
+  do
+    echo "From stdin: prev_ref: $prev_ref prev_oid: $prev_oid remote_ref: $remote_ref remote_oid: $remote_oid"
+
+    if test "$prev_oid" = "$ZERO"
+    then
+      # Handle delete
+      :
+    else
+      if test "$remote_oid" = "$ZERO"
+      then
+        # New branch, examine all commits
+        range="$prev_oid"
+      else
+        # Update to existing branch, examine new commits
+        # shellcheck disable=SC2034
+        range="$remote_oid..$prev_oid"
+      fi
+
+      # Perform verification here...
+    fi
+  done
+}
+
+# This check will ensure that you bump the version in your root Cargo.toml when pushing commits.
+# It behaves differently if you're pushing a sub-branch vs the default branch:
+# 1. If we're in the main branch, then we want to bump the version on every push.
+#    So we want to compare with the version from the parent of the earliest commit being pushed.
+# 2. If we're pushing from a sub-branch, then we don't want to require a bump every
+#    time we push (e.g. when we're fixing something in a PR), so just compare with the version from the main branch to
+#    ensure that your PR will increase the version when merged.
+ensure_cargo_version_is_updated() {
+  [[ -e Cargo.toml ]] || return 0
+
+  # Check if lock file is tracked.
+  local lock_file
+  git ls-files --error-unmatch Cargo.lock >& /dev/null && lock_file="Cargo.lock "
+
+  echo "pre-push: Checking that version has been updated in Cargo.toml..."
+
+  local oldest_rev newest_rev default_branch branch our_version prev_version our_maj our_min our_patch prev_maj prev_min prev_patch
+
+  # Get the list of revisions being pushed.
+  # Helpful link:
+  # https://stackoverflow.com/questions/78121361/how-to-get-the-list-of-files-that-will-be-pushed-in-git-push
+  git rev-list HEAD --not --remotes > /tmp/git-rev-list.out
+
+  # No revisions being pushed? (Happens if you inadvertently run git push twice in a row)
+  if [[ ! -s /tmp/git-rev-list.out ]]; then
+    echo "Nothing being pushed; remote is up-to-date."
+    return 0
+  fi
+
+  oldest_rev=$(tail -n 1 /tmp/git-rev-list.out)
+  newest_rev=$(head -n 1 /tmp/git-rev-list.out)
+  default_branch=$(git remote show origin | sed -n '/HEAD branch/s/.*: //p')
+  branch="$(git rev-parse --abbrev-ref HEAD)"
+
+  # Get the version from the newest commit
+  our_version=$(git show "${newest_rev}:Cargo.toml" |
+    grep -E '^version\s*=\s*"[0-9]+\.[0-9]+\.[0-9]+"' |
+    awk -F'"' '{print $2}')
+
+  if [[ "$branch" == "$default_branch" ]]; then
+    # Compare with the version from the parent of the earliest commit being pushed. Adding tilde (~) to oldest_rev
+    # represents its parent commit.
+    prev_version=$(git show "${oldest_rev}~:Cargo.toml" |
+      grep -E '^version\s*=\s*"[0-9]+\.[0-9]+\.[0-9]+"' |
+      awk -F'"' '{print $2}')
+  else
+    # Not the default branch, so just compare with the version from the main branch.
+    prev_version=$(git show "$default_branch:Cargo.toml" |
+      grep -E '^version\s*=\s*"[0-9]+\.[0-9]+\.[0-9]+"' |
+      awk -F'"' '{print $2}')
+  fi
+
+  read our_maj our_min our_patch <<< "${our_version//./ }"
+  read prev_maj prev_min prev_patch <<< "${prev_version//./ }"
+
+  if (( our_maj > prev_maj || (our_maj == prev_maj && (our_min > prev_min || (our_min == prev_min && our_patch > prev_patch))) )); then
+    echo "✅ Version in Cargo.toml has changed from $prev_version to $our_version"
+  else
+    FAIL_MSGS="${FAIL_MSGS}! - Version has not been updated in Cargo.toml!\n"
+    FAIL_MSGS="${FAIL_MSGS}! - Version being pushed: $our_version; version in $default_branch branch: $prev_version\n"
+    FAIL_MSGS="${FAIL_MSGS}! - Please run the following commands from the root of your repo:\n"
+    FAIL_MSGS="${FAIL_MSGS}\n"
+    FAIL_MSGS="${FAIL_MSGS}    cargo install --list | \n"
+    FAIL_MSGS="${FAIL_MSGS}      grep '^cargo-edit ' >/dev/null ||\n"
+    FAIL_MSGS="${FAIL_MSGS}      cargo install cargo-edit &&\n"
+    FAIL_MSGS="${FAIL_MSGS}    cargo set-version --bump patch &&\n"
+    FAIL_MSGS="${FAIL_MSGS}    version=\$(grep '^version' Cargo.toml | cut -f 2 -d'\"') &&\n"
+    FAIL_MSGS="${FAIL_MSGS}    git commit Cargo.toml $lock_file -m \"Version bump to \$version\"\n"
+    FAIL_MSGS="${FAIL_MSGS}\n"
+    FAIL_MSGS="${FAIL_MSGS}! - Then try your push again.\n"
+  fi
+}
+
+go_no_go() {
+  # Did we fail any checks?
+  if [[ -n ${FAIL_MSGS} ]]; then
+    echo -e "!\n!\n! PRE-PUSH CHECK(S) FAILED:"
+    echo -en "!\n!\n${FAIL_MSGS}"
+    echo -e "!\n! [use 'git push --no-verify' to push anyway]"
+    exit 1
+  fi
+
+  echo "pre-push: ✅ All tests pass!"
+}
+
+####
+main "$@"

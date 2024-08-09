@@ -1,0 +1,192 @@
+#!/bin/bash
+
+# This pre-commit hook will check to ensure that:
+#
+# 1. you're not commiting directly to the default branch.
+# 2. none of your staged changes has a "don't commit" comment.
+# 3. you're not accidentally checking in secrets in your config files
+# 4. your manifest.pom.xml and pom.xml files are in sync (if you're in a repo
+#    that follows that convention).
+
+# Handy tip: if you want to copy this hook to each of your local repositories:
+#
+# CD into the directory where your repos reside:
+#   cd ~/src (or ~/work or whatever)
+# Then do this (you'll need to edit the "cp" line):
+#   for hook_dir in */.git/hooks; do
+#     echo "Installing hook in $(dirname $(dirname $hook_dir))..."
+#     cp -p LOCATION-OF-THIS-FILE $hook_dir
+#   done
+
+main() {
+  init
+
+  # Check that we're not committing directly into the default branch by mistake.
+  check_branch
+  # Get the list of staged files once, to save invoking the same command over and over again.
+  get_staged_files
+  # Check for "don't commit" comments.
+  check_for_dont_commit
+  # Ensure we're not accidentally committing any secrets into config files.
+  check_for_secrets
+
+  # Rather than editing your copy of this file, you can place any custom
+  # pre-commit logic for your repo in .git/hooks/pre-commit-extras.
+  # The file will be sourced, so the environment variables in this
+  # file ($STAGED_FILES etc) will be available.
+  # To indicate failure, simply append to the $FAIL_MSGS variable, like this:
+  # FAIL_MSGS="${FAIL_MSGS}! - This is a helpful error message!\n"
+  run_extra_hooks
+
+  go_no_go
+}
+
+init() {
+  # Redirect all subsequent stdout to stderr.
+  exec 1>&2
+
+  # Git hooks are run from the root of the repo (no matter where you're running the command from).
+  # Sanity check:
+  if [[ ! -d .git ]]; then
+    echo "pre-commit: '.git' directory not found; not being run from a git repo?"
+    exit 1
+  fi
+  HOOK_DIR=$(pwd)/.git/hooks
+  STAGED_FILES=/tmp/git-staged.$$
+  # For renamed files, we only want to look at the changes, not the entire file; so diff the old and the new.
+  RENAMED_FILES=/tmp/git-renamed.$$
+  FAIL_MSGS=
+
+  # This bit of magic is needed so that the script works even in brand new repos, with no previous commits.
+  if git rev-parse --verify HEAD > /dev/null 2>&1; then
+    AGAINST=HEAD
+  else
+    # Initial commit: diff against an empty tree object
+    # (This is a special value, not random. It's the SHA of the empty-tree).
+    AGAINST=4b825dc642cb6eb9a060e54bf8d69288fbee4904
+  fi
+}
+
+# Check that we're not committing directly into the default branch by mistake.
+check_branch() {
+  [[ -e "$HOOK_DIR/.commit_to_default_ok" ]] && return
+
+  local branch=$(git rev-parse --abbrev-ref $AGAINST)
+  local default_branch=$(git remote show origin | sed -n '/HEAD branch/s/.*: //p')
+
+  if [[ ${branch} == "$default_branch" ]]; then
+    FAIL_MSGS="${FAIL_MSGS}! - Don't commit directly to the '$default_branch' branch!\n"
+    FAIL_MSGS="${FAIL_MSGS}!   To disable this: touch $HOOK_DIR/.commit_to_default_ok\n"
+  else
+    echo "pre-commit: ✅ branch is not the default branch"
+  fi
+}
+
+# Get the list of staged files once, to save invoking the same command over and over again.
+get_staged_files() {
+  # Use --name-status rather than --name-only so we can omit renamed and deleted files.
+  # Redirect to a tmp file rather than store the output in a variable. This way we can handle filenames with spaces.
+  git diff --cached --name-status ${AGAINST} > /tmp/git.out.$$
+  grep -v '^D' < /tmp/git.out.$$ | sed -e 's/^.*\t//' > "$STAGED_FILES"
+  grep '^R' < /tmp/git.out.$$ | sed -e "s/^R[0-9a-f]*\t//; s/\t/:::/" > "$RENAMED_FILES"
+}
+
+# Check for "don't commit" comments. Extremely useful for ensuring that you remove temporary debugging junk that you
+# don't want to commit!
+#
+# TODO jafischer-2024-02-26: assumes stock git diff output; doesn't work if you're using something like
+#                            "difftool" for prettier git diffs.
+check_for_dont_commit() {
+  local staged_file renamed_line
+  while read -r staged_file; do
+    # Skip this script, obviously.
+    [[ $(basename "$staged_file") == pre-commit ]] && continue
+    # Want to match with don't commit, dont_commit, etc.
+    git diff --staged "$staged_file" \
+      | grep -i "^[+].*DON'*T[ _]*COMMIT" > /dev/null \
+      && FAIL_MSGS="${FAIL_MSGS}! - $staged_file has a DON'T COMMIT comment\n"
+  done < "$STAGED_FILES"
+
+  local dont_commit_found
+  while read -r renamed_line; do
+    local old_name=${renamed_line/:::*} new_name=${renamed_line/*:::}
+    # Skip this script, obviously.
+    [[ $(basename "$new_name") == pre-commit ]] && continue
+
+    git diff HEAD^ HEAD -M -- "$old_name" "$new_name" \
+      | grep -i "^[+].*DON'*T[ _]*COMMIT" > /dev/null \
+      && {
+        FAIL_MSGS="${FAIL_MSGS}! - $new_name has a DON'T COMMIT comment\n"
+        dont_commit_found=yes
+      }
+  done < "$RENAMED_FILES"
+
+  if [[ -z $dont_commit_found ]]; then
+    echo "pre-commit: ✅ No don't commit comments"
+  fi
+}
+
+# Ensure we're not accidentally committing any secrets. Just a simple-minded grep for certain keywords like password,
+# privateKey, etc.
+check_for_secrets() {
+  local staged_file renamed_line ext
+  while read -r staged_file; do
+    ext=${staged_file##*.}
+    if [[ ${ext} == "properties" || ${ext} == "yml" || ${ext} == "yaml"  || ${ext} == "json" ]]; then
+      FAIL_MSGS="${FAIL_MSGS}$(git diff --staged "$staged_file" | check_diffs_for_secrets "$staged_file")"
+    fi
+  done < "$STAGED_FILES"
+
+  local secrets_found
+  while read -r renamed_line; do
+    # Split old_name:::new_name into old_name and new_name.
+    local old_name=${renamed_line/:::*} new_name=${renamed_line/*:::}
+    ext=${new_name##*.}
+    if [[ ${ext} == "properties" || ${ext} == "yml" || ${ext} == "yaml"  || ${ext} == "json" ]]; then
+      FAIL_MSGS="${FAIL_MSGS}$(git diff HEAD^ HEAD -M -- "$old_name" "$new_name" | check_diffs_for_secrets "$new_name")"
+      secrets_found=yes
+    fi
+  done < "$RENAMED_FILES"
+
+  if [[ -z $secrets_found ]]; then
+    echo "pre-commit: ✅ no secrets in property/config files"
+  fi
+}
+
+check_diffs_for_secrets() {
+  local file="$*"
+  grep -v "^-" \
+    | grep -iv "\(supersecret\)\|\(ENC(\)\|\(app.encryption.password\)\|\(secretRef:\)" \
+    | grep -i "\(secret.*[:=]\)\|\(privatekey.*[:=]\)\|\(password.*[:=]\)" > /tmp/grep.$$.out \
+    && {
+      grep -i "^$file\$" "$HOOK_DIR/.secretsok" > /dev/null 2>&1 || {
+        echo -e "! - $file appears to contain secrets:\n $(sed -e 's/^/    /' < /tmp/grep.$$.out)"
+        echo -e "!   To disable checking for this file:"
+        echo -e "!   echo $file >> $HOOK_DIR/.secretsok\\\\n"
+      }
+      rm /tmp/grep.$$.out
+    }
+}
+
+run_extra_hooks() {
+  [[ -e "$HOOK_DIR/pre-commit-extras" ]] || return 0
+  [[ -x "$HOOK_DIR/pre-commit-extras" ]] || chmod +x "$HOOK_DIR/pre-commit-extras"
+
+  echo "pre-commit: running pre-commit-extras"
+  source "$HOOK_DIR/pre-commit-extras"
+}
+
+go_no_go() {
+  # Did we fail any checks?
+  if [[ -n ${FAIL_MSGS} ]]; then
+    echo -e "!\n!\n! PRE-COMMIT CHECK(S) FAILED:"
+    echo -en "!\n!\n${FAIL_MSGS}"
+    echo -e "!\n! [use 'git commit --no-verify' to commit anyway]"
+    echo -e "! [Remember that if you fix something, you need to stage the fix via 'git add' it before committing again]"
+    exit 1
+  fi
+
+  echo "pre-commit: ✅ All tests pass!"
+}
+
+main
