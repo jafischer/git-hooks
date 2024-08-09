@@ -5,8 +5,6 @@
 # 1. you're not commiting directly to the default branch.
 # 2. none of your staged changes has a "don't commit" comment.
 # 3. you're not accidentally checking in secrets in your config files
-# 4. your manifest.pom.xml and pom.xml files are in sync (if you're in a repo
-#    that follows that convention).
 
 # Handy tip: if you want to copy this hook to each of your local repositories:
 #
