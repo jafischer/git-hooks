@@ -29,6 +29,7 @@ main() {
 
   examine_commits
   ensure_cargo_version_is_updated
+  cargo_fmt_check
 
   go_no_go
 }
@@ -49,6 +50,8 @@ init() {
     echo "pre-push: '.git' directory not found; not being run from a git repo?"
     exit 1
   fi
+
+  HOOK_DIR=$(pwd)/.git/hooks
 }
 
 # We're not doing anything with individual commits yet, but leaving this function here for future use.
@@ -91,6 +94,7 @@ examine_commits() {
 #    ensure that your PR will increase the version when merged.
 ensure_cargo_version_is_updated() {
   [[ -e Cargo.toml ]] || return 0
+  [[ -e "$HOOK_DIR/.no_version_check" ]] && return
 
   # Check if lock file is tracked.
   local lock_file
@@ -152,6 +156,26 @@ ensure_cargo_version_is_updated() {
     FAIL_MSGS="${FAIL_MSGS}    git commit Cargo.toml $lock_file -m \"Version bump to \$version\"\n"
     FAIL_MSGS="${FAIL_MSGS}\n"
     FAIL_MSGS="${FAIL_MSGS}! - Then try your push again.\n"
+    FAIL_MSGS="${FAIL_MSGS}!   To disable this: touch $HOOK_DIR/.no_version_check\n"
+  fi
+}
+
+cargo_fmt_check() {
+  [[ -e "$HOOK_DIR/.no_cargo_fmt" ]] && return
+
+  [[ -e Cargo.toml ]] || return 0
+  echo "pre-push: checking cargo fmt..."
+
+  if cargo +nightly fmt --check >& /dev/null; then
+    echo "✅ Code is formatted"
+  else
+    FAIL_MSGS="${FAIL_MSGS}! - Code has not been formatted!\n"
+    FAIL_MSGS="${FAIL_MSGS}! - Please run the following commands from the root of your repo:\n"
+    FAIL_MSGS="${FAIL_MSGS}\n"
+    FAIL_MSGS="${FAIL_MSGS}    cargo +nightly fmt \n"
+    FAIL_MSGS="${FAIL_MSGS}\n"
+    FAIL_MSGS="${FAIL_MSGS}! - Then commit the changes and try your push again.\n"
+    FAIL_MSGS="${FAIL_MSGS}!   To disable this: touch $HOOK_DIR/.no_cargo_fmt\n"
   fi
 }
 
