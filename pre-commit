@@ -33,7 +33,7 @@ main() {
   # The file will be sourced, so the environment variables in this
   # file ($STAGED_FILES etc) will be available.
   # To indicate failure, simply append to the $FAIL_MSGS variable, like this:
-  # FAIL_MSGS="${FAIL_MSGS}! - This is a helpful error message!\n"
+  # FAIL_MSGS="${FAIL_MSGS}! ❌ This is a helpful error message!\n"
   run_extra_hooks
 
   go_no_go
@@ -73,8 +73,8 @@ check_branch() {
   local default_branch=$(git remote show origin | sed -n '/HEAD branch/s/.*: //p')
 
   if [[ ${branch} == "$default_branch" ]]; then
-    FAIL_MSGS="${FAIL_MSGS}! - Don't commit directly to the '$default_branch' branch!\n"
-    FAIL_MSGS="${FAIL_MSGS}!   To disable this: touch $HOOK_DIR/.commit_to_default_ok\n"
+    FAIL_MSGS="${FAIL_MSGS}! ❌ Don't commit directly to the '$default_branch' branch!\n"
+    FAIL_MSGS="${FAIL_MSGS}!    To disable this: touch $HOOK_DIR/.commit_to_default_ok\n"
   else
     echo "pre-commit: ✅ branch is not the default branch"
   fi
@@ -102,7 +102,7 @@ check_for_dont_commit() {
     # Want to match with don't commit, dont_commit, etc.
     git diff --staged "$staged_file" \
       | grep -i "^[+].*DON'*T[ _]*COMMIT" > /dev/null \
-      && FAIL_MSGS="${FAIL_MSGS}! - $staged_file has a DON'T COMMIT comment\n"
+      && FAIL_MSGS="${FAIL_MSGS}! ❌ $staged_file has a DON'T COMMIT comment\n"
   done < "$STAGED_FILES"
 
   local dont_commit_found
@@ -114,7 +114,7 @@ check_for_dont_commit() {
     git diff HEAD^ HEAD -M -- "$old_name" "$new_name" \
       | grep -i "^[+].*DON'*T[ _]*COMMIT" > /dev/null \
       && {
-        FAIL_MSGS="${FAIL_MSGS}! - $new_name has a DON'T COMMIT comment\n"
+        FAIL_MSGS="${FAIL_MSGS}! ❌ $new_name has a DON'T COMMIT comment\n"
         dont_commit_found=yes
       }
   done < "$RENAMED_FILES"
