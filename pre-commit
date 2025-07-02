@@ -9,11 +9,12 @@
 # Handy tip: if you want to copy this hook to each of your local repositories:
 #
 # CD into the directory where your repos reside:
+#   hook_file=LOCATION-OF-THIS-FILE
 #   cd ~/src (or ~/work or whatever)
-# Then do this (you'll need to edit the "cp" line):
+# Then do this:
 #   for hook_dir in */.git/hooks; do
 #     echo "Installing hook in $(dirname $(dirname $hook_dir))..."
-#     cp -p LOCATION-OF-THIS-FILE $hook_dir
+#     cp -p $hook_file $hook_dir
 #   done
 
 main() {
@@ -23,8 +24,10 @@ main() {
   check_branch
   # Get the list of staged files once, to save invoking the same command over and over again.
   get_staged_files
-  # Check for "don't commit" comments.
-  check_for_dont_commit
+  # Check for "nocommit" comments.
+  check_for_nocommit
+  # Check rust files for `todo!()`
+  check_for_rust_todo
   # Ensure we're not accidentally committing any secrets into config files.
   check_for_secrets
 
@@ -89,38 +92,60 @@ get_staged_files() {
   grep '^R' < /tmp/git.out.$$ | sed -e "s/^R[0-9a-f]*\t//; s/\t/:::/" > "$RENAMED_FILES"
 }
 
-# Check for "don't commit" comments. Extremely useful for ensuring that you remove temporary debugging junk that you
+# Check for "nocommit" comments. Extremely useful for ensuring that you remove temporary debugging junk that you
 # don't want to commit!
 #
 # TODO jafischer-2024-02-26: assumes stock git diff output; doesn't work if you're using something like
 #                            "difftool" for prettier git diffs.
-check_for_dont_commit() {
+check_for_nocommit() {
   local staged_file renamed_line
   while read -r staged_file; do
     # Skip this script, obviously.
     [[ $(basename "$staged_file") == pre-commit ]] && continue
     # Want to match with don't commit, dont_commit, etc.
     git diff --staged "$staged_file" \
-      | grep -i "^[+].*DON'*T[ _]*COMMIT" > /dev/null \
-      && FAIL_MSGS="${FAIL_MSGS}! ❌ $staged_file has a DON'T COMMIT comment\n"
+      | grep -v '^[-]' \
+      | grep -i "\(^[+].*DON'*T[ _]*COMMIT\)\|\(^[+].*nocommit\)" > /dev/null \
+      && FAIL_MSGS="${FAIL_MSGS}! ❌ $staged_file has a nocommit (or \"don't commit\") comment\n"
   done < "$STAGED_FILES"
 
-  local dont_commit_found
+  local nocommit_found
   while read -r renamed_line; do
     local old_name=${renamed_line/:::*} new_name=${renamed_line/*:::}
     # Skip this script, obviously.
     [[ $(basename "$new_name") == pre-commit ]] && continue
 
     git diff HEAD^ HEAD -M -- "$old_name" "$new_name" \
-      | grep -i "^[+].*DON'*T[ _]*COMMIT" > /dev/null \
+      | grep -i "\(^[+].*DON'*T[ _]*COMMIT\)\|\(^[+].*nocommit\)" > /dev/null \
       && {
-        FAIL_MSGS="${FAIL_MSGS}! ❌ $new_name has a DON'T COMMIT comment\n"
-        dont_commit_found=yes
+        FAIL_MSGS="${FAIL_MSGS}! ❌ $new_name has a nocommit (or \"don't commit\") comment\n"
+        nocommit_found=yes
       }
   done < "$RENAMED_FILES"
 
-  if [[ -z $dont_commit_found ]]; then
-    echo "pre-commit: ✅ No don't commit comments"
+  if [[ -z $nocommit_found ]]; then
+    echo "pre-commit: ✅ No 'nocommit' comments"
+  fi
+}
+
+check_for_rust_todo() {
+  local staged_file todo_found rust_found
+
+  while read -r staged_file; do
+    if [[ "$staged_file" == *".rs" ]]; then
+      rust_found=1
+      git diff --staged "$staged_file" \
+        | grep -v '^[-]' \
+        | grep -E '\<todo\>!()' > /dev/null \
+        && {
+          FAIL_MSGS="${FAIL_MSGS}! ❌ $staged_file has a todo!() statement\n"
+          todo_found=1
+        }
+    fi
+  done < "$STAGED_FILES"
+
+  if [[ -z $todo_found ]] && [[ -n $rust_found ]]; then
+    echo "pre-commit: ✅ No 'todo!()' statements"
   fi
 }
 
