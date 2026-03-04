@@ -9,7 +9,7 @@
 # Handy tip: if you want to copy this hook to each of your local repositories:
 #
 # CD into the directory where your repos reside:
-#   hook_file=LOCATION-OF-THIS-FILE
+#   hook_file=FULL-PATH-TO-THIS-FILE
 #   cd ~/src (or ~/work or whatever)
 # Then do this:
 #   for hook_dir in */.git/hooks; do
@@ -31,10 +31,23 @@ main() {
   # Ensure we're not accidentally committing any secrets into config files.
   check_for_secrets
 
+  # How to add custom pre-commit logic in your repo:
+  #
   # Rather than editing your copy of this file, you can place any custom
   # pre-commit logic for your repo in .git/hooks/pre-commit-extras.
-  # The file will be sourced, so the environment variables in this
+  #
+  # The file will be sourced, so the global variables in this
   # file ($STAGED_FILES etc) will be available.
+  #
+  # Sample pre-commit-extras file:
+  #
+  # my_extra_hook() {
+  #  local staged_file
+  #  while read -r staged_file; do
+  #    ... your logic here
+  #  done < "$STAGED_FILES"
+  # }
+  #
   # To indicate failure, simply append to the $FAIL_MSGS variable, like this:
   # FAIL_MSGS="${FAIL_MSGS}! ❌ This is a helpful error message!\n"
   run_extra_hooks
@@ -77,7 +90,7 @@ check_branch() {
 
   if [[ ${branch} == "$default_branch" ]]; then
     FAIL_MSGS="${FAIL_MSGS}! ❌ Don't commit directly to the '$default_branch' branch!\n"
-    FAIL_MSGS="${FAIL_MSGS}!    To disable this: touch $HOOK_DIR/.commit_to_default_ok\n"
+    FAIL_MSGS="${FAIL_MSGS}!    To disable this: touch .git/hooks/.commit_to_default_ok\n"
   else
     echo "pre-commit: ✅ branch is not the default branch"
   fi
@@ -98,7 +111,7 @@ get_staged_files() {
 # TODO jafischer-2024-02-26: assumes stock git diff output; doesn't work if you're using something like
 #                            "difftool" for prettier git diffs.
 check_for_nocommit() {
-  local staged_file renamed_line
+  local staged_file renamed_line nocommit_found
   while read -r staged_file; do
     # Skip this script, obviously.
     [[ $(basename "$staged_file") == pre-commit ]] && continue
@@ -106,10 +119,12 @@ check_for_nocommit() {
     git diff --staged "$staged_file" \
       | grep -v '^[-]' \
       | grep -i "\(^[+].*DON'*T[ _]*COMMIT\)\|\(^[+].*nocommit\)" > /dev/null \
-      && FAIL_MSGS="${FAIL_MSGS}! ❌ $staged_file has a nocommit (or \"don't commit\") comment\n"
-  done < "$STAGED_FILES"
+      && {
+        FAIL_MSGS="${FAIL_MSGS}! ❌ $staged_file has a nocommit (or \"don't commit\") comment\n"
+        nocommit_found=yes
+      }
+    done < "$STAGED_FILES"
 
-  local nocommit_found
   while read -r renamed_line; do
     local old_name=${renamed_line/:::*} new_name=${renamed_line/*:::}
     # Skip this script, obviously.
@@ -152,22 +167,27 @@ check_for_rust_todo() {
 # Ensure we're not accidentally committing any secrets. Just a simple-minded grep for certain keywords like password,
 # privateKey, etc.
 check_for_secrets() {
-  local staged_file renamed_line ext
+  local staged_file renamed_line ext fail_msg secrets_found
   while read -r staged_file; do
     ext=${staged_file##*.}
     if [[ ${ext} == "properties" || ${ext} == "yml" || ${ext} == "yaml"  || ${ext} == "json" ]]; then
-      FAIL_MSGS="${FAIL_MSGS}$(git diff --staged "$staged_file" | check_diffs_for_secrets "$staged_file")"
+      fail_msg=$(git diff --staged "$staged_file" | check_diffs_for_secrets "$staged_file")
+      if [[ -n $fail_msg ]]; then
+        FAIL_MSGS="${FAIL_MSGS}${fail_msg}"
+        secrets_found=yes
+      fi
     fi
   done < "$STAGED_FILES"
-
-  local secrets_found
   while read -r renamed_line; do
     # Split old_name:::new_name into old_name and new_name.
     local old_name=${renamed_line/:::*} new_name=${renamed_line/*:::}
     ext=${new_name##*.}
     if [[ ${ext} == "properties" || ${ext} == "yml" || ${ext} == "yaml"  || ${ext} == "json" ]]; then
-      FAIL_MSGS="${FAIL_MSGS}$(git diff HEAD^ HEAD -M -- "$old_name" "$new_name" | check_diffs_for_secrets "$new_name")"
-      secrets_found=yes
+      fail_msg=$(git diff HEAD^ HEAD -M -- "$old_name" "$new_name" | check_diffs_for_secrets "$new_name")
+      if [[ -n $fail_msg ]]; then
+        FAIL_MSGS="${FAIL_MSGS}${fail_msg}"
+        secrets_found=yes
+      fi
     fi
   done < "$RENAMED_FILES"
 
@@ -183,9 +203,9 @@ check_diffs_for_secrets() {
     | grep -i "\(secret.*[:=]\)\|\(privatekey.*[:=]\)\|\(password.*[:=]\)" > /tmp/grep.$$.out \
     && {
       grep -i "^$file\$" "$HOOK_DIR/.secretsok" > /dev/null 2>&1 || {
-        echo -e "! - $file appears to contain secrets:\n $(sed -e 's/^/    /' < /tmp/grep.$$.out)"
-        echo -e "!   To disable checking for this file:"
-        echo -e "!   echo $file >> $HOOK_DIR/.secretsok\\\\n"
+        echo -e "! ❌ $file appears to contain secrets:\n $(sed -e 's/^/    /' < /tmp/grep.$$.out)"
+        echo -e "!   To disable checking this file for secrets:"
+        echo -e "!   echo $file >> .git/hooks/.secretsok\\\\n"
       }
       rm /tmp/grep.$$.out
     }
@@ -193,7 +213,6 @@ check_diffs_for_secrets() {
 
 run_extra_hooks() {
   [[ -e "$HOOK_DIR/pre-commit-extras" ]] || return 0
-  [[ -x "$HOOK_DIR/pre-commit-extras" ]] || chmod +x "$HOOK_DIR/pre-commit-extras"
 
   echo "pre-commit: running pre-commit-extras"
   source "$HOOK_DIR/pre-commit-extras"
@@ -205,7 +224,7 @@ go_no_go() {
     echo -e "!\n!\n! PRE-COMMIT CHECK(S) FAILED:"
     echo -en "!\n!\n${FAIL_MSGS}"
     echo -e "!\n! [use 'git commit --no-verify' to commit anyway]"
-    echo -e "! [Remember that if you fix something, you need to stage the fix via 'git add' it before committing again]"
+    echo -e "! [Remember that if you fix something, you need to stage the fix via 'git add' before committing again]"
     exit 1
   fi
 

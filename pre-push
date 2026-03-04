@@ -9,7 +9,7 @@
 # Handy tip: if you want to copy this hook to each of your local repositories:
 #
 # CD into the directory where your repos reside:
-#   hook_file=LOCATION-OF-THIS-FILE
+#   hook_file=FULL-PATH-TO-THIS-FILE
 #   cd ~/src (or ~/work or whatever)
 # Then do this:
 #   for hook_dir in */.git/hooks; do
@@ -31,6 +31,18 @@ main() {
   examine_commits
   ensure_cargo_version_is_updated
   cargo_fmt_check
+
+  # How to add custom pre-push logic in your repo:
+  #
+  # Rather than editing your copy of this file, you can place any custom
+  # pre-push logic for your repo in .git/hooks/pre-push-extras.
+  #
+  # The file will be sourced, so the global variables in this
+  # file will be available.
+  #
+  # To indicate failure, simply append to the $FAIL_MSGS variable, like this:
+  # FAIL_MSGS="${FAIL_MSGS}! ❌ This is a helpful error message!\n"
+  run_extra_hooks
 
   go_no_go
 }
@@ -145,19 +157,24 @@ ensure_cargo_version_is_updated() {
   if (( our_maj > prev_maj || (our_maj == prev_maj && (our_min > prev_min || (our_min == prev_min && our_patch > prev_patch))) )); then
     echo "✅ Version in Cargo.toml has changed from $prev_version to $our_version"
   else
-    FAIL_MSGS="${FAIL_MSGS}! - Version has not been updated in Cargo.toml!\n"
+    FAIL_MSGS="${FAIL_MSGS}! - ❌ Version has not been updated in Cargo.toml!\n"
     FAIL_MSGS="${FAIL_MSGS}! - Version being pushed: $our_version; version in $default_branch branch: $prev_version\n"
     FAIL_MSGS="${FAIL_MSGS}! - Please run the following commands from the root of your repo:\n"
     FAIL_MSGS="${FAIL_MSGS}\n"
-    FAIL_MSGS="${FAIL_MSGS}    cargo install --list | \n"
-    FAIL_MSGS="${FAIL_MSGS}      grep '^cargo-edit ' >/dev/null ||\n"
-    FAIL_MSGS="${FAIL_MSGS}      cargo install cargo-edit &&\n"
-    FAIL_MSGS="${FAIL_MSGS}    cargo set-version --bump patch &&\n"
-    FAIL_MSGS="${FAIL_MSGS}    version=\$(grep '^version' Cargo.toml | cut -f 2 -d'\"') &&\n"
-    FAIL_MSGS="${FAIL_MSGS}    git commit Cargo.toml $lock_file -m \"Version bump to \$version\"\n"
+    FAIL_MSGS="${FAIL_MSGS}\n"
+    if [[ -e scripts/bump ]]; then
+      FAIL_MSGS="${FAIL_MSGS}    ./scripts/bump -c\n"
+    else
+      FAIL_MSGS="${FAIL_MSGS}    cargo install --list | \n"
+      FAIL_MSGS="${FAIL_MSGS}      grep '^cargo-edit ' >/dev/null ||\n"
+      FAIL_MSGS="${FAIL_MSGS}      cargo install cargo-edit &&\n"
+      FAIL_MSGS="${FAIL_MSGS}    cargo set-version --bump patch &&\n"
+      FAIL_MSGS="${FAIL_MSGS}    version=\$(grep '^version' Cargo.toml | cut -f 2 -d'\"') &&\n"
+      FAIL_MSGS="${FAIL_MSGS}    git commit Cargo.toml $lock_file -m \"Version bump to \$version\"\n"
+    fi
     FAIL_MSGS="${FAIL_MSGS}\n"
     FAIL_MSGS="${FAIL_MSGS}! - Then try your push again.\n"
-    FAIL_MSGS="${FAIL_MSGS}!   To disable this: touch $HOOK_DIR/.no_version_check\n"
+    FAIL_MSGS="${FAIL_MSGS}!   To disable this: touch .git/hooks/.no_version_check\n"
   fi
 }
 
@@ -170,14 +187,22 @@ cargo_fmt_check() {
   if cargo +nightly fmt --check >& /dev/null; then
     echo "✅ Code is formatted"
   else
-    FAIL_MSGS="${FAIL_MSGS}! - Code has not been formatted!\n"
+    FAIL_MSGS="${FAIL_MSGS}! - ❌ Code has not been formatted!\n"
     FAIL_MSGS="${FAIL_MSGS}! - Please run the following commands from the root of your repo:\n"
     FAIL_MSGS="${FAIL_MSGS}\n"
     FAIL_MSGS="${FAIL_MSGS}    cargo +nightly fmt \n"
     FAIL_MSGS="${FAIL_MSGS}\n"
     FAIL_MSGS="${FAIL_MSGS}! - Then commit the changes and try your push again.\n"
-    FAIL_MSGS="${FAIL_MSGS}!   To disable this: touch $HOOK_DIR/.no_cargo_fmt\n"
+    FAIL_MSGS="${FAIL_MSGS}!   To disable this: touch .git/hooks/.no_cargo_fmt\n"
   fi
+}
+
+run_extra_hooks() {
+  [[ -e "$HOOK_DIR/pre-push-extras" ]] || return 0
+  [[ -x "$HOOK_DIR/pre-push-extras" ]] || chmod +x "$HOOK_DIR/pre-push-extras"
+
+  echo "pre-push: running pre-push-extras"
+  source "$HOOK_DIR/pre-push-extras"
 }
 
 go_no_go() {
