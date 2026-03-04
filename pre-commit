@@ -65,6 +65,7 @@ init() {
     echo "pre-commit: '.git' directory not found; not being run from a git repo?"
     exit 1
   fi
+  REPO_ROOT=$(pwd)
   HOOK_DIR=$(pwd)/.git/hooks
   STAGED_FILES=/tmp/git-staged.$$
   # For renamed files, we only want to look at the changes, not the entire file; so diff the old and the new.

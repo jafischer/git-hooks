@@ -64,6 +64,7 @@ init() {
     exit 1
   fi
 
+  REPO_ROOT=$(pwd)
   HOOK_DIR=$(pwd)/.git/hooks
 }
 
