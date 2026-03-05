@@ -217,6 +217,15 @@ run_extra_hooks() {
   source "$HOOK_DIR/pre-commit-extras"
 }
 
+die() {
+  echo "ERROR: $*"
+  exit 1
+}
+
+do_or_die() {
+  "$@" || die "Command failed: '$*'"
+}
+
 go_no_go() {
   # Did we fail any checks?
   if [[ -n ${FAIL_MSGS} ]]; then
