@@ -3,19 +3,7 @@
 # This pre-push script will ensure that:
 #
 # 1. if you're in a Rust repo, the version in Cargo.toml is updated.
-#
-# ... that's it (so far).
-
-# Handy tip: if you want to copy this hook to each of your local repositories:
-#
-# CD into the directory where your repos reside:
-#   hook_file=FULL-PATH-TO-THIS-FILE
-#   cd ~/src (or ~/work or whatever)
-# Then do this:
-#   for hook_dir in */.git/hooks; do
-#     echo "Installing hook in $(dirname $(dirname $hook_dir))..."
-#     cp -p $hook_file $hook_dir
-#   done
+# 2. if you're in a Rust repo, that the code has been formatted with 'cargo fmt'
 
 main() {
   # The pre-push hook is called with the following parameters:

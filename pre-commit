@@ -6,17 +6,6 @@
 # 2. none of your staged changes has a "don't commit" comment.
 # 3. you're not accidentally checking in secrets in your config files
 
-# Handy tip: if you want to copy this hook to each of your local repositories:
-#
-# CD into the directory where your repos reside:
-#   hook_file=FULL-PATH-TO-THIS-FILE
-#   cd ~/src (or ~/work or whatever)
-# Then do this:
-#   for hook_dir in */.git/hooks; do
-#     echo "Installing hook in $(dirname $(dirname $hook_dir))..."
-#     cp -p $hook_file $hook_dir
-#   done
-
 main() {
   init
 
