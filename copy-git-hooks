@@ -84,8 +84,6 @@ copy_hook() {
 
   # Does the hook already exist?
   if [[ -e "$target" ]]; then
-    log_debug "$YELLOW$target ${cyan}already exists"
-
     if [[ -L "$target" ]]; then
       log_debug "$yellow$target ${cyan}is a symlink"
       link_target=$(readlink "$target")
@@ -99,8 +97,9 @@ copy_hook() {
     fi
 
     if $FORCE; then
-      log "${RED}Overwriting $YELLOW$target"
+      log "${RED}--force: overwriting $YELLOW$target"
     else
+      log "$YELLOW$target ${cyan}already exists"
       return 0
     fi
   fi
