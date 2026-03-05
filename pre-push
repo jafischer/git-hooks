@@ -16,7 +16,7 @@ main() {
   echo "In pre-push($remote, $url)"
   init
 
-  examine_commits
+  #examine_commits
   ensure_cargo_version_is_updated
   cargo_fmt_check
 
@@ -52,8 +52,12 @@ init() {
     exit 1
   fi
 
+  # shellcheck disable=SC2034
   REPO_ROOT=$(pwd)
   HOOK_DIR=$(pwd)/.git/hooks
+
+  # If any command in a pipeline fails, that return code will be used as the return code of the whole pipeline
+  set -o pipefail
 }
 
 # We're not doing anything with individual commits yet, but leaving this function here for future use.
@@ -99,7 +103,7 @@ ensure_cargo_version_is_updated() {
   [[ -e "$HOOK_DIR/.no_version_check" ]] && return
 
   # Check if lock file is tracked.
-  local lock_file
+  local lock_file rev_list
   git ls-files --error-unmatch Cargo.lock >& /dev/null && lock_file="Cargo.lock "
 
   echo "pre-push: Checking that version has been updated in Cargo.toml..."
@@ -109,16 +113,16 @@ ensure_cargo_version_is_updated() {
   # Get the list of revisions being pushed.
   # Helpful link:
   # https://stackoverflow.com/questions/78121361/how-to-get-the-list-of-files-that-will-be-pushed-in-git-push
-  git rev-list HEAD --not --remotes > /tmp/git-rev-list.out
+  rev_list=$(git rev-list HEAD --not --remotes)
 
   # No revisions being pushed? (Happens if you inadvertently run git push twice in a row)
-  if [[ ! -s /tmp/git-rev-list.out ]]; then
+  if [[ -z "$rev_list" ]]; then
     echo "Nothing being pushed; remote is up-to-date."
     return 0
   fi
 
-  oldest_rev=$(tail -n 1 /tmp/git-rev-list.out)
-  newest_rev=$(head -n 1 /tmp/git-rev-list.out)
+  oldest_rev=$(echo -e "$rev_list" | tail -n 1)
+  newest_rev=$(echo -e "$rev_list" | head -n 1)
   default_branch=$(git remote show origin | sed -n '/HEAD branch/s/.*: //p')
   branch="$(git rev-parse --abbrev-ref HEAD)"
 

@@ -59,6 +59,7 @@ init() {
     echo "pre-commit: '.git' directory not found; not being run from a git repo?"
     exit 1
   fi
+
   REPO_ROOT=$(pwd)
   HOOK_DIR=$(pwd)/.git/hooks
   STAGED_FILES=/tmp/git-staged.$$
@@ -74,6 +75,9 @@ init() {
     # (This is a special value, not random. It's the SHA of the empty-tree).
     AGAINST=4b825dc642cb6eb9a060e54bf8d69288fbee4904
   fi
+
+  # If any command in a pipeline fails, that return code will be used as the return code of the whole pipeline
+  set -o pipefail
 }
 
 # Check that we're not committing directly into the default branch by mistake.
@@ -95,9 +99,10 @@ check_branch() {
 get_staged_files() {
   # Use --name-status rather than --name-only so we can omit renamed and deleted files.
   # Redirect to a tmp file rather than store the output in a variable. This way we can handle filenames with spaces.
-  git diff --cached --name-status ${AGAINST} > /tmp/git.out.$$
-  grep -v '^D' < /tmp/git.out.$$ | sed -e 's/^.*\t//' > "$STAGED_FILES"
-  grep '^R' < /tmp/git.out.$$ | sed -e "s/^R[0-9a-f]*\t//; s/\t/:::/" > "$RENAMED_FILES"
+  grep -v '^D' <(git diff --cached --name-status ${AGAINST}) | sed -e 's/^.*\t//' > "$STAGED_FILES"
+  grep '^R'    <(git diff --cached --name-status ${AGAINST}) | sed -e "s/^R[0-9a-f]*\t//; s/\t/:::/" > "$RENAMED_FILES"
+
+  trap 'cleanup' EXIT INT TERM
 }
 
 # Check for "n o c o m m i t" comments (I am trying to avoid having the actual word in this script, so that
@@ -196,18 +201,19 @@ check_for_secrets() {
 }
 
 check_diffs_for_secrets() {
-  local file="$*"
-  grep -v "^-" \
+  local file="$*" grep_output
+
+  if grep_output=$(grep -v "^-" \
     | grep -iv "\(supersecret\)\|\(ENC(\)\|\(app.encryption.password\)\|\(secretRef:\)" \
-    | grep -i "\(secret.*[:=]\)\|\(privatekey.*[:=]\)\|\(password.*[:=]\)" > /tmp/grep.$$.out \
-    && {
-      grep -i "^$file\$" "$HOOK_DIR/.secretsok" > /dev/null 2>&1 || {
-        echo -e "! ❌ $file appears to contain secrets:\n $(sed -e 's/^/    /' < /tmp/grep.$$.out)"
-        echo -e "!   To disable checking this file for secrets:"
-        echo -e "!   echo $file >> .git/hooks/.secretsok\\\\n"
-      }
-      rm /tmp/grep.$$.out
-    }
+    | grep -i "\(secret.*[:=]\)\|\(privatekey.*[:=]\)\|\(password.*[:=]\)")
+  then
+    if ! grep -i "^$file\$" "$HOOK_DIR/.secretsok" > /dev/null 2>&1; then
+      # shellcheck disable=SC2001
+      echo -e "! ❌ $file appears to contain secrets:\n $(echo "$grep_output" | sed -e 's/^/    /')"
+      echo -e "!    To disable checking this file for secrets:"
+      echo -e "!    echo $file >> .git/hooks/.secretsok\\\\n"
+    fi
+  fi
 }
 
 run_extra_hooks() {
@@ -237,6 +243,11 @@ go_no_go() {
   fi
 
   echo "pre-commit: ✅ All tests pass!"
+}
+
+cleanup() {
+  rm "$STAGED_FILES" >& /dev/null
+  rm "$RENAMED_FILES" >& /dev/null
 }
 
 main
