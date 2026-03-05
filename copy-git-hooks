@@ -56,11 +56,11 @@ walk_cd_path() {
   echo $CDPATH |
     tr ':' '\n' |
     while read -r dir; do
-      log_heading "Checking all git repos under $YELLOW$dir"
       if [[ $dir != '.' ]]; then
+        log_heading "Checking all git repos under $YELLOW$dir"
         cd $dir || continue
         for hook_dir in */.git/hooks; do
-          copy_hooks_to_repo "$hook_dir"
+          [[ -d "$hook_dir" ]] && copy_hooks_to_repo "$hook_dir"
         done
       fi
     done
@@ -99,7 +99,7 @@ copy_hook() {
     fi
 
     if $FORCE; then
-      log_warn "Overwriting $target"
+      log "${RED}Overwriting $YELLOW$target"
     else
       return 0
     fi
