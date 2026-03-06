@@ -60,10 +60,10 @@ init() {
     exit 1
   fi
 
+  # shellcheck disable=SC2034
   REPO_ROOT=$(pwd)
   HOOK_DIR=$(pwd)/.git/hooks
   STAGED_FILES=/tmp/git-staged.$$
-  # For renamed files, we only want to look at the changes, not the entire file; so diff the old and the new.
   RENAMED_FILES=/tmp/git-renamed.$$
   FAIL_MSGS=
 
@@ -82,10 +82,11 @@ init() {
 
 # Check that we're not committing directly into the default branch by mistake.
 check_branch() {
+  local branch default_branch
   [[ -e "$HOOK_DIR/.commit_to_default_ok" ]] && return
 
-  local branch=$(git rev-parse --abbrev-ref $AGAINST)
-  local default_branch=$(git remote show origin | sed -n '/HEAD branch/s/.*: //p')
+  branch=$(git rev-parse --abbrev-ref $AGAINST)
+  default_branch=$(git remote show origin | sed -n '/HEAD branch/s/.*: //p')
 
   if [[ ${branch} == "$default_branch" ]]; then
     FAIL_MSGS="${FAIL_MSGS}! ❌ Don't commit directly to the '$default_branch' branch!\n"
@@ -134,6 +135,7 @@ check_for_no_commit() {
     # Skip this script, obviously.
     [[ $(basename "$new_name") == pre-commit ]] && continue
 
+    # For renamed files, we only want to look at the changes, not the entire file; so diff the old and the new.
     git diff HEAD^ HEAD -M -- "$old_name" "$new_name" \
       | grep -i "\(^[+].*DON'*T[ _]*COMMIT\)\|\(^[+].*$special_word\)" > /dev/null \
       && {
