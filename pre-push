@@ -13,7 +13,7 @@ main() {
   # This script does not (yet) make use of these arguments.
   local remote="$1" url="$2"
 
-  echo "In pre-push($remote, $url)"
+  #echo "In pre-push($remote, $url)"
   init
 
   #examine_commits
@@ -106,7 +106,7 @@ ensure_cargo_version_is_updated() {
   local lock_file rev_list
   git ls-files --error-unmatch Cargo.lock >& /dev/null && lock_file="Cargo.lock "
 
-  echo "pre-push: Checking that version has been updated in Cargo.toml..."
+  #echo "pre-push: Checking that version has been updated in Cargo.toml..."
 
   local oldest_rev newest_rev default_branch branch our_version prev_version our_maj our_min our_patch prev_maj prev_min prev_patch
 
@@ -117,7 +117,7 @@ ensure_cargo_version_is_updated() {
 
   # No revisions being pushed? (Happens if you inadvertently run git push twice in a row)
   if [[ -z "$rev_list" ]]; then
-    echo "Nothing being pushed; remote is up-to-date."
+    echo "pre-push: nothing being pushed; remote is up-to-date."
     return 0
   fi
 
@@ -148,11 +148,11 @@ ensure_cargo_version_is_updated() {
   read -r prev_maj prev_min prev_patch <<< "${prev_version//./ }"
 
   if (( our_maj > prev_maj || (our_maj == prev_maj && (our_min > prev_min || (our_min == prev_min && our_patch > prev_patch))) )); then
-    echo "✅ Version in Cargo.toml has changed from $prev_version to $our_version"
+    echo "pre-push: ✅ Version in Cargo.toml has changed from $prev_version to $our_version"
   else
     FAIL_MSGS="${FAIL_MSGS}! - ❌ Version has not been updated in Cargo.toml!\n"
-    FAIL_MSGS="${FAIL_MSGS}! - Version being pushed: $our_version; version in $default_branch branch: $prev_version\n"
-    FAIL_MSGS="${FAIL_MSGS}! - Please run the following commands from the root of your repo:\n"
+    FAIL_MSGS="${FAIL_MSGS}! -    Version being pushed: $our_version; version in $default_branch branch: $prev_version\n"
+    FAIL_MSGS="${FAIL_MSGS}! -    Please run the following commands from the root of your repo:\n"
     FAIL_MSGS="${FAIL_MSGS}\n"
     FAIL_MSGS="${FAIL_MSGS}\n"
     if [[ -e scripts/bump ]]; then
@@ -166,8 +166,8 @@ ensure_cargo_version_is_updated() {
       FAIL_MSGS="${FAIL_MSGS}    git commit Cargo.toml $lock_file -m \"Version bump to \$version\"\n"
     fi
     FAIL_MSGS="${FAIL_MSGS}\n"
-    FAIL_MSGS="${FAIL_MSGS}! - Then try your push again.\n"
-    FAIL_MSGS="${FAIL_MSGS}!   To disable this: touch .git/hooks/.no_version_check\n"
+    FAIL_MSGS="${FAIL_MSGS}! -    Then try your push again.\n"
+    FAIL_MSGS="${FAIL_MSGS}! -    To disable this: touch .git/hooks/.no_version_check\n"
   fi
 }
 
@@ -175,18 +175,18 @@ cargo_fmt_check() {
   [[ -e "$HOOK_DIR/.no_cargo_fmt" ]] && return
 
   [[ -e Cargo.toml ]] || return 0
-  echo "pre-push: checking cargo fmt..."
+  #echo "pre-push: checking cargo fmt..."
 
   if cargo +nightly fmt --check >& /dev/null; then
-    echo "✅ Code is formatted"
+    echo "pre-push: ✅ Code is formatted"
   else
     FAIL_MSGS="${FAIL_MSGS}! - ❌ Code has not been formatted!\n"
-    FAIL_MSGS="${FAIL_MSGS}! - Please run the following commands from the root of your repo:\n"
+    FAIL_MSGS="${FAIL_MSGS}! -    Please run the following commands from the root of your repo:\n"
     FAIL_MSGS="${FAIL_MSGS}\n"
     FAIL_MSGS="${FAIL_MSGS}    cargo +nightly fmt \n"
     FAIL_MSGS="${FAIL_MSGS}\n"
-    FAIL_MSGS="${FAIL_MSGS}! - Then commit the changes and try your push again.\n"
-    FAIL_MSGS="${FAIL_MSGS}!   To disable this: touch .git/hooks/.no_cargo_fmt\n"
+    FAIL_MSGS="${FAIL_MSGS}! -    Then commit the changes and try your push again.\n"
+    FAIL_MSGS="${FAIL_MSGS}! -    To disable this: touch .git/hooks/.no_cargo_fmt\n"
   fi
 }
 
@@ -194,7 +194,7 @@ run_extra_hooks() {
   [[ -e "$HOOK_DIR/pre-push-extras" ]] || return 0
   [[ -x "$HOOK_DIR/pre-push-extras" ]] || chmod +x "$HOOK_DIR/pre-push-extras"
 
-  echo "pre-push: running pre-push-extras"
+  echo "pre-push: sourcing pre-push-extras"
   source "$HOOK_DIR/pre-push-extras"
 }
 

@@ -221,7 +221,7 @@ check_diffs_for_secrets() {
 run_extra_hooks() {
   [[ -e "$HOOK_DIR/pre-commit-extras" ]] || return 0
 
-  echo "pre-commit: running pre-commit-extras"
+  echo "pre-commit: sourcing pre-commit-extras"
   source "$HOOK_DIR/pre-commit-extras"
 }
 
