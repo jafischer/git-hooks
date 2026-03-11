@@ -144,8 +144,8 @@ ensure_cargo_version_is_updated() {
       awk -F'"' '{print $2}')
   fi
 
-  read our_maj our_min our_patch <<< "${our_version//./ }"
-  read prev_maj prev_min prev_patch <<< "${prev_version//./ }"
+  read -r our_maj our_min our_patch <<< "${our_version//./ }"
+  read -r prev_maj prev_min prev_patch <<< "${prev_version//./ }"
 
   if (( our_maj > prev_maj || (our_maj == prev_maj && (our_min > prev_min || (our_min == prev_min && our_patch > prev_patch))) )); then
     echo "✅ Version in Cargo.toml has changed from $prev_version to $our_version"
