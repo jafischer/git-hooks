@@ -10,13 +10,16 @@ main() {
   # $1 -- Name of the remote to which the push is being done
   # $2 -- URL to which the push is being done
   #
-  # This script does not (yet) make use of these arguments.
-  local remote="$1" url="$2"
+  # This script does not (yet) make use of these arguments, but I'll set these variables in case
+  # someone wants to make use of them in their `pre-push-extras` script.
+  # shellcheck disable=SC2034
+  REMOTE_NAME="$1"
+  # shellcheck disable=SC2034
+  PUSH_URL="$2"
 
   #echo "In pre-push($remote, $url)"
   init
 
-  #examine_commits
   ensure_cargo_version_is_updated
   cargo_fmt_check
 
@@ -40,11 +43,6 @@ init() {
   exec 1>&2
 
   FAIL_MSGS=
-  # Pushing a new branch will give us a remote OID of all zeros, so we need to compare against that.
-  # This command came from the pre-push.sample, and it converts the output of "git hash-object" into all zeros (rather
-  # than just hard-coding "0000000000000000000000000000000000000000"), presumably to handle future changes to
-  # the hash size.
-  ZERO=$(git hash-object --stdin </dev/null | tr '0-9a-f' '0')
 
   # Git hooks are always run from the root of the repo. Sanity check:
   if [[ ! -d .git ]]; then
@@ -58,37 +56,6 @@ init() {
 
   # If any command in a pipeline fails, that return code will be used as the return code of the whole pipeline
   set -o pipefail
-}
-
-# We're not doing anything with individual commits yet, but leaving this function here for future use.
-examine_commits() {
-  local prev_ref prev_oid remote_ref remote_oid range
-
-  # Information about the commits which are being pushed is supplied as lines to
-  # stdin in the form:
-  #   <local ref> <local oid> <remote ref> <remote oid>
-  while read -r prev_ref prev_oid remote_ref remote_oid
-  do
-    echo "From stdin: prev_ref: $prev_ref prev_oid: $prev_oid remote_ref: $remote_ref remote_oid: $remote_oid"
-
-    if test "$prev_oid" = "$ZERO"
-    then
-      # Handle delete
-      :
-    else
-      if test "$remote_oid" = "$ZERO"
-      then
-        # New branch, examine all commits
-        range="$prev_oid"
-      else
-        # Update to existing branch, examine new commits
-        # shellcheck disable=SC2034
-        range="$remote_oid..$prev_oid"
-      fi
-
-      # Perform verification here...
-    fi
-  done
 }
 
 # This check will ensure that you bump the version in your root Cargo.toml when pushing commits.

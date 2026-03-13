@@ -53,12 +53,12 @@ usage() {
 walk_cd_path() {
   local dir hook_dir
 
-  echo $CDPATH |
+  echo "$CDPATH" |
     tr ':' '\n' |
     while read -r dir; do
       if [[ $dir != '.' ]]; then
         log_heading "Checking all git repos under $YELLOW$dir"
-        cd $dir || continue
+        cd "$dir" || continue
         for hook_dir in */.git/hooks; do
           [[ -d "$hook_dir" ]] && copy_hooks_to_repo "$hook_dir"
         done
@@ -105,8 +105,8 @@ copy_hook() {
   fi
 
   # Double dirname so we log the repo,not the .git directory.
-  log "Installing $YELLOW$(basename "$hook_file")$CYAN in $YELLOW$(dirname "$(dirname $hook_dir)")..."
-  ln -sf "$hook_file" "$hook_dir/$(basename $hook_file)"
+  log "Installing $YELLOW$(basename "$hook_file")$CYAN in $YELLOW$(dirname "$(dirname "$hook_dir")")..."
+  ln -sf "$hook_file" "$hook_dir/$(basename "$hook_file")"
 }
 
 ################################################################################
