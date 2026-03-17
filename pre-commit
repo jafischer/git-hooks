@@ -10,6 +10,8 @@ main() {
   init
 
   # Check that we're not committing directly into the default branch by mistake.
+  # Also check that we're not committing into a branch that has been deleted on the
+  # remote (i.e. after just merging a PR from this branch).
   check_branch
   
   # Get the list of staged files once, to save invoking the same command over and over again.
@@ -80,19 +82,43 @@ init() {
   set -o pipefail
 }
 
-# Check that we're not committing directly into the default branch by mistake.
 check_branch() {
-  local branch default_branch
+  local branch
+  branch=$(git rev-parse --abbrev-ref $AGAINST) || die failed to determine branch
+
+  check_default_branch $branch
+  check_deleted_branch $branch
+}
+
+# Check that we're not committing directly into the default branch by mistake.
+check_default_branch() {
+  local branch=$1 default_branch
   [[ -e "$HOOK_DIR/.commit_to_default_ok" ]] && return
 
-  branch=$(git rev-parse --abbrev-ref $AGAINST)
   default_branch=$(git remote show origin | sed -n '/HEAD branch/s/.*: //p')
 
-  if [[ ${branch} == "$default_branch" ]]; then
+  if [[ "$branch" == "$default_branch" ]]; then
     FAIL_MSGS="${FAIL_MSGS}! ❌ Don't commit directly to the '$default_branch' branch!\n"
-    FAIL_MSGS="${FAIL_MSGS}!    To disable this: touch .git/hooks/.commit_to_default_ok\n"
+    FAIL_MSGS="${FAIL_MSGS}!    To disable this check for this repo: touch .git/hooks/.commit_to_default_ok\n"
   else
     echo "pre-commit: ✅ branch is not the default branch"
+  fi
+}
+
+# Check that we're not committing into a branch that has been deleted on the remote (i.e. after just merging a PR
+# from this branch).
+check_deleted_branch() {
+  local branch=$1 fetch_head="$REPO_ROOT/.git/FETCH_HEAD"
+  [[ -e "$HOOK_DIR/.commit_to_deleted_branch_ok" ]] && return
+
+  # Git fetch isn't free, so only do it if there hasn't been a fetch in the last 5 minutes
+  if [[ ! -f "$fetch_head" ]] || find "$fetch_head" -mmin +5 | grep -q .; then
+    git fetch --prune --quiet
+  fi
+  if git branch -vv | grep '^[*].*: gone]' > /dev/null; then
+    FAIL_MSGS="${FAIL_MSGS}! ❌ Looks like you have already merged a PR from this branch.\n"
+    FAIL_MSGS="${FAIL_MSGS}!    (You are commiting into a branch that has been deleted in the remote).\n"
+    FAIL_MSGS="${FAIL_MSGS}!    To disable this check for this repo: touch .git/hooks/.commit_to_deleted_branch_ok\n"
   fi
 }
 
@@ -121,7 +147,7 @@ check_for_no_commit() {
     # Skip this script, obviously.
     [[ $(basename "$staged_file") == pre-commit ]] && continue
     # Want to match with don't commit, dont_commit, etc.
-    git diff --staged "$staged_file" \
+    git diff --staged "$staged_file" 2> /dev/null \
       | grep -v '^[-]' \
       | grep -i "\(^[+].*DON'*T[ _]*COMMIT\)\|\(^[+].*$special_word\)" > /dev/null \
       && {
@@ -136,7 +162,7 @@ check_for_no_commit() {
     [[ $(basename "$new_name") == pre-commit ]] && continue
 
     # For renamed files, we only want to look at the changes, not the entire file; so diff the old and the new.
-    git diff HEAD^ HEAD -M -- "$old_name" "$new_name" \
+    git diff HEAD^ HEAD -M -- "$old_name" "$new_name" 2> /dev/null \
       | grep -i "\(^[+].*DON'*T[ _]*COMMIT\)\|\(^[+].*$special_word\)" > /dev/null \
       && {
         FAIL_MSGS="${FAIL_MSGS}! ❌ $new_name has a $special_word (or \"don't commit\") comment\n"
