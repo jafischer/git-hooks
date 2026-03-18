@@ -3,7 +3,7 @@
 A set of Git hook scripts that I have honed over the years.
 
 Use `./install-git-hooks` to install them in every repository contained in
-the directories of your `CDPATH`.
+the directories of your `CDPATH` (it won't overwrite any existing hooks).
 
 Don't have a `CDPATH` set? It's just like the PATH variable, but for the cd
 command. 
@@ -16,7 +16,7 @@ export CDPATH=~:~/src:~/work
 
 ## pre-commit
 
-My pre-commit hook prevents from making some of my most common mistakes:
+My pre-commit hook prevents me from making some of my most common mistakes:
 
 - accidentally committing into the main branch
 - accidentally committing some temporary changes I had added while debugging
