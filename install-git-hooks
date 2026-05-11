@@ -4,15 +4,18 @@ main() {
   set_globals
   parse_options "$@"
 
-  [[ -z "$CDPATH" ]] && die "Please set your CDPATH variable"
-
-  walk_cd_path
+  if $ALL; then
+    walk_cd_path
+  else
+    copy_hooks_to_repo ./.git/hooks
+  fi
 }
 
 set_globals() {
   SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
   # This is the list of git hooks as of 2026-03-05
   HOOK_FILES=$(echo "$SCRIPT_DIR"/{applypatch-msg,commit-msg,fsmonitor-watchman,post-update,pre-applypatch,pre-commit,pre-merge-commit,pre-push,pre-rebase,pre-receive,prepare-commit-msg,push-to-checkout,sendemail-validate,update})
+  ALL=false
   FORCE=false
 }
 
@@ -21,6 +24,9 @@ parse_options() {
     case ${1} in
       help | -h | --help)
         usage
+        ;;
+      -a | --all)
+        ALL=true
         ;;
       -f | --force)
         FORCE=true
@@ -52,6 +58,8 @@ usage() {
 
 walk_cd_path() {
   local dir hook_dir
+
+  [[ -z "$CDPATH" ]] && die "Please set your CDPATH variable"
 
   echo "$CDPATH" |
     tr ':' '\n' |
@@ -99,7 +107,7 @@ copy_hook() {
     if $FORCE; then
       log "${RED}--force: overwriting $YELLOW$target"
     else
-      log "$YELLOW$target ${cyan}already exists"
+      log "$YELLOW$target ${cyan}already exists as a file, not a symlink"
       return 0
     fi
   fi
