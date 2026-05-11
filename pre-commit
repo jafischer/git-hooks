@@ -86,8 +86,8 @@ check_branch() {
   local branch
   branch=$(git rev-parse --abbrev-ref $AGAINST) || die failed to determine branch
 
-  check_default_branch $branch
-  check_deleted_branch $branch
+  check_default_branch "$branch"
+  check_deleted_branch "$branch"
 }
 
 # Check that we're not committing directly into the default branch by mistake.
@@ -99,7 +99,9 @@ check_default_branch() {
 
   if [[ "$branch" == "$default_branch" ]]; then
     FAIL_MSGS="${FAIL_MSGS}! ❌ Don't commit directly to the '$default_branch' branch!\n"
-    FAIL_MSGS="${FAIL_MSGS}!    To disable this check for this repo: touch .git/hooks/.commit_to_default_ok\n"
+    FAIL_MSGS="${FAIL_MSGS}!    If you really intend to commit to the default branch, you can\n"
+    FAIL_MSGS="${FAIL_MSGS}!    disable this check for this repo with this command:\n"
+    FAIL_MSGS="${FAIL_MSGS}!    touch .git/hooks/.commit_to_default_ok\n"
   else
     echo "pre-commit: ✅ branch is not the default branch"
   fi
@@ -140,7 +142,7 @@ get_staged_files() {
 # TODO jafischer-2024-02-26: assumes stock git diff output; doesn't work if you're using something like
 #                            "difftool" for prettier git diffs.
 check_for_no_commit() {
-  local staged_file renamed_line found special_word="no"
+  local staged_file renamed_line found=false special_word="no"
   #
   special_word="${special_word}commit"
   while read -r staged_file; do
@@ -152,7 +154,7 @@ check_for_no_commit() {
       | grep -i "\(^[+].*DON'*T[ _]*COMMIT\)\|\(^[+].*$special_word\)" > /dev/null \
       && {
         FAIL_MSGS="${FAIL_MSGS}! ❌ $staged_file has a $special_word (or \"don't commit\") comment\n"
-        found=yes
+        found=true
       }
     done < "$STAGED_FILES"
 
@@ -166,11 +168,11 @@ check_for_no_commit() {
       | grep -i "\(^[+].*DON'*T[ _]*COMMIT\)\|\(^[+].*$special_word\)" > /dev/null \
       && {
         FAIL_MSGS="${FAIL_MSGS}! ❌ $new_name has a $special_word (or \"don't commit\") comment\n"
-        found=yes
+        found=true
       }
   done < "$RENAMED_FILES"
 
-  if [[ -z $found ]]; then
+  if ! $found; then
     echo "pre-commit: ✅ No '$special_word' comments"
   fi
 }
