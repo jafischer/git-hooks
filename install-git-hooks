@@ -7,7 +7,7 @@ main() {
   if $ALL; then
     walk_cd_path
   else
-    copy_hooks_to_repo ./.git/hooks
+    copy_hooks_to_repo "$(pwd)/.git/hooks"
   fi
 }
 
@@ -43,12 +43,16 @@ parse_options() {
 }
 
 usage() {
-  log_heading "$(basename "$0")" "Symlinks these git hook scripts to all repos in your CDPATH"
+  log_heading "$(basename "$0")" "Symlinks the git hook scripts to your repo(s)"
   log ""
   log "Usage:"
   log "${YELLOW}$(basename "$0") [OPTIONS]"
-  log "\nOptions:"
-  log "${YELLOW}-f,--force     ${CYAN}Forces overwrite of existing hooks"
+  log ""
+  log "With no arguments, copies the hooks to the current repo (if your current directory is a git repo)."
+  log ""
+  log "Options:"
+  log "${YELLOW}-a,--all       ${CYAN}Copy the hooks to all repos in your CDPATH."
+  log "${YELLOW}-f,--force     ${CYAN}Forces overwrite of existing hooks."
   #log "${YELLOW}-x,--xxx ARG     ${CYAN}xxx."
   log "${YELLOW}help,-h,--help  ${CYAN}Display this help."
   log ""
