@@ -103,7 +103,7 @@ check_default_branch() {
     FAIL_MSGS="${FAIL_MSGS}!    disable this check for this repo with this command:\n"
     FAIL_MSGS="${FAIL_MSGS}!    touch .git/hooks/.commit_to_default_ok\n"
   else
-    echo "pre-commit: ✅ branch is not the default branch"
+    echo "pre-commit: ✅ branch is not the default branch."
   fi
 }
 
@@ -120,7 +120,8 @@ check_deleted_branch() {
   if git branch -vv | grep '^[*].*: gone]' > /dev/null; then
     FAIL_MSGS="${FAIL_MSGS}! ❌ Looks like you have already merged a PR from this branch.\n"
     FAIL_MSGS="${FAIL_MSGS}!    (You are commiting into a branch that has been deleted in the remote).\n"
-    FAIL_MSGS="${FAIL_MSGS}!    To disable this check for this repo: touch .git/hooks/.commit_to_deleted_branch_ok\n"
+    FAIL_MSGS="${FAIL_MSGS}!    To disable this check for this repo:\n"
+    FAIL_MSGS="${FAIL_MSGS}!    touch .git/hooks/.commit_to_deleted_branch_ok\n"
   fi
 }
 
@@ -148,12 +149,16 @@ check_for_no_commit() {
   while read -r staged_file; do
     # Skip this script, obviously.
     [[ $(basename "$staged_file") == pre-commit ]] && continue
+    [[ $(basename "$staged_file") == *nocommit* ]] && {
+        FAIL_MSGS="${FAIL_MSGS}! ❌ $staged_file has $special_word in its name.\n"
+        found=true
+      }
     # Want to match with don't commit, dont_commit, etc.
     git diff --staged "$staged_file" 2> /dev/null \
       | grep -v '^[-]' \
       | grep -i "\(^[+].*DON'*T[ _]*COMMIT\)\|\(^[+].*$special_word\)" > /dev/null \
       && {
-        FAIL_MSGS="${FAIL_MSGS}! ❌ $staged_file has a $special_word (or \"don't commit\") comment\n"
+        FAIL_MSGS="${FAIL_MSGS}! ❌ $staged_file has a $special_word (or \"don't commit\") comment.\n"
         found=true
       }
     done < "$STAGED_FILES"
@@ -167,13 +172,13 @@ check_for_no_commit() {
     git diff HEAD^ HEAD -M -- "$old_name" "$new_name" 2> /dev/null \
       | grep -i "\(^[+].*DON'*T[ _]*COMMIT\)\|\(^[+].*$special_word\)" > /dev/null \
       && {
-        FAIL_MSGS="${FAIL_MSGS}! ❌ $new_name has a $special_word (or \"don't commit\") comment\n"
+        FAIL_MSGS="${FAIL_MSGS}! ❌ $new_name has a $special_word (or \"don't commit\") comment.\n"
         found=true
       }
   done < "$RENAMED_FILES"
 
   if ! $found; then
-    echo "pre-commit: ✅ No '$special_word' comments"
+    echo "pre-commit: ✅ No '$special_word' comments."
   fi
 }
 
@@ -185,16 +190,16 @@ check_for_rust_todo() {
       rust_found=1
       git diff --staged "$staged_file" \
         | grep -v '^[-]' \
-        | grep -E '\<todo\>!()' > /dev/null \
+        | grep -E '\<todo\>!\(\)' > /dev/null \
         && {
-          FAIL_MSGS="${FAIL_MSGS}! ❌ $staged_file has a todo!() statement\n"
+          FAIL_MSGS="${FAIL_MSGS}! ❌ $staged_file has a todo!() statement.\n"
           todo_found=1
         }
     fi
   done < "$STAGED_FILES"
 
   if [[ -z $todo_found ]] && [[ -n $rust_found ]]; then
-    echo "pre-commit: ✅ No 'todo!()' statements"
+    echo "pre-commit: ✅ No 'todo!()' statements."
   fi
 }
 
@@ -226,7 +231,7 @@ check_for_secrets() {
   done < "$RENAMED_FILES"
 
   if [[ -z $secrets_found ]]; then
-    echo "pre-commit: ✅ no secrets in property/config files"
+    echo "pre-commit: ✅ no secrets in property/config files."
   fi
 }
 
@@ -268,7 +273,7 @@ go_no_go() {
     echo -e "!\n!\n! PRE-COMMIT CHECK(S) FAILED:"
     echo -en "!\n!\n${FAIL_MSGS}"
     echo -e "!\n! [use 'git commit --no-verify' to commit anyway]"
-    echo -e "! [Remember that if you fix something, you need to stage the fix via 'git add' before committing again]"
+    echo -e "! Remember that if you fix something, you need to stage the fix via 'git add' before committing again."
     exit 1
   fi
 
