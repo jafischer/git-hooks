@@ -1,11 +1,5 @@
 #!/bin/bash
 
-# This pre-commit hook will check to ensure that:
-#
-# 1. you're not commiting directly to the default branch.
-# 2. none of your staged changes has a "don't commit" comment.
-# 3. you're not accidentally checking in secrets in your config files
-
 main() {
   init
 
@@ -45,7 +39,7 @@ main() {
   # }
   #
   # To indicate failure, simply append to the $FAIL_MSGS variable, like this:
-  # FAIL_MSGS="${FAIL_MSGS}! ❌ This is a helpful error message!\n"
+  # FAIL_MSGS="${FAIL_MSGS}❌ This is a helpful error message\n"
   run_extra_hooks
 
   go_no_go
@@ -62,11 +56,11 @@ init() {
     exit 1
   fi
 
-  # shellcheck disable=SC2034
   REPO_ROOT=$(pwd)
   HOOK_DIR=$(pwd)/.git/hooks
   STAGED_FILES=/tmp/git-staged.$$
   RENAMED_FILES=/tmp/git-renamed.$$
+  PASS_MSGS=
   FAIL_MSGS=
 
   # This bit of magic is needed so that the script works even in brand new repos, with no previous commits.
@@ -98,12 +92,11 @@ check_default_branch() {
   default_branch=$(git remote show origin | sed -n '/HEAD branch/s/.*: //p')
 
   if [[ "$branch" == "$default_branch" ]]; then
-    FAIL_MSGS="${FAIL_MSGS}! ❌ Don't commit directly to the '$default_branch' branch!\n"
-    FAIL_MSGS="${FAIL_MSGS}!    If you really intend to commit to the default branch, you can\n"
-    FAIL_MSGS="${FAIL_MSGS}!    disable this check for this repo with this command:\n"
-    FAIL_MSGS="${FAIL_MSGS}!    touch .git/hooks/.commit_to_default_ok\n"
+    FAIL_MSGS="${FAIL_MSGS}❌ Don't commit directly to the '$default_branch' branch.\n"
+    #FAIL_MSGS="${FAIL_MSGS}   If you really intend to commit to the default branch, you can\n"
+    #FAIL_MSGS="${FAIL_MSGS}   To disable this: touch .git/hooks/.commit_to_default_ok\n"
   else
-    echo "pre-commit: ✅ branch is not the default branch."
+    PASS_MSGS="${PASS_MSGS}✅ branch is not the default branch.\n"
   fi
 }
 
@@ -118,10 +111,9 @@ check_deleted_branch() {
     git fetch --prune --quiet
   fi
   if git branch -vv | grep '^[*].*: gone]' > /dev/null; then
-    FAIL_MSGS="${FAIL_MSGS}! ❌ Looks like you have already merged a PR from this branch.\n"
-    FAIL_MSGS="${FAIL_MSGS}!    (You are commiting into a branch that has been deleted in the remote).\n"
-    FAIL_MSGS="${FAIL_MSGS}!    To disable this check for this repo:\n"
-    FAIL_MSGS="${FAIL_MSGS}!    touch .git/hooks/.commit_to_deleted_branch_ok\n"
+    FAIL_MSGS="${FAIL_MSGS}❌ Looks like you have already merged a PR from this branch.\n"
+    FAIL_MSGS="${FAIL_MSGS}   (You are commiting into a branch that has been deleted in the remote).\n"
+    #FAIL_MSGS="${FAIL_MSGS}   To disable this check: touch .git/hooks/.commit_to_deleted_branch_ok\n"
   fi
 }
 
@@ -150,15 +142,14 @@ check_for_no_commit() {
     # Skip this script, obviously.
     [[ $(basename "$staged_file") == pre-commit ]] && continue
     [[ $(basename "$staged_file") == *nocommit* ]] && {
-        FAIL_MSGS="${FAIL_MSGS}! ❌ $staged_file has $special_word in its name.\n"
+        FAIL_MSGS="${FAIL_MSGS}❌ $staged_file has $special_word in its name.\n"
         found=true
       }
-    # Want to match with don't commit, dont_commit, etc.
     git diff --staged "$staged_file" 2> /dev/null \
       | grep -v '^[-]' \
-      | grep -i "\(^[+].*DON'*T[ _]*COMMIT\)\|\(^[+].*$special_word\)" > /dev/null \
+      | grep -i "^[+].*$special_word" > /dev/null \
       && {
-        FAIL_MSGS="${FAIL_MSGS}! ❌ $staged_file has a $special_word (or \"don't commit\") comment.\n"
+        FAIL_MSGS="${FAIL_MSGS}❌ $staged_file has a $special_word comment.\n"
         found=true
       }
     done < "$STAGED_FILES"
@@ -170,15 +161,15 @@ check_for_no_commit() {
 
     # For renamed files, we only want to look at the changes, not the entire file; so diff the old and the new.
     git diff HEAD^ HEAD -M -- "$old_name" "$new_name" 2> /dev/null \
-      | grep -i "\(^[+].*DON'*T[ _]*COMMIT\)\|\(^[+].*$special_word\)" > /dev/null \
+      | grep -i "^[+].*$special_word" > /dev/null \
       && {
-        FAIL_MSGS="${FAIL_MSGS}! ❌ $new_name has a $special_word (or \"don't commit\") comment.\n"
+        FAIL_MSGS="${FAIL_MSGS}❌ $new_name has a $special_word comment.\n"
         found=true
       }
   done < "$RENAMED_FILES"
 
   if ! $found; then
-    echo "pre-commit: ✅ No '$special_word' comments."
+    PASS_MSGS="${PASS_MSGS}✅ No '$special_word' comments.\n"
   fi
 }
 
@@ -192,14 +183,14 @@ check_for_rust_todo() {
         | grep -v '^[-]' \
         | grep -E '\<todo\>!\(\)' > /dev/null \
         && {
-          FAIL_MSGS="${FAIL_MSGS}! ❌ $staged_file has a todo!() statement.\n"
+          FAIL_MSGS="${FAIL_MSGS}❌ $staged_file has a todo!() statement.\n"
           todo_found=1
         }
     fi
   done < "$STAGED_FILES"
 
   if [[ -z $todo_found ]] && [[ -n $rust_found ]]; then
-    echo "pre-commit: ✅ No 'todo!()' statements."
+    PASS_MSGS="${PASS_MSGS}✅ No 'todo!()' statements.\n"
   fi
 }
 
@@ -231,7 +222,7 @@ check_for_secrets() {
   done < "$RENAMED_FILES"
 
   if [[ -z $secrets_found ]]; then
-    echo "pre-commit: ✅ no secrets in property/config files."
+    PASS_MSGS="${PASS_MSGS}✅ no secrets in property/config files.\n"
   fi
 }
 
@@ -239,14 +230,16 @@ check_diffs_for_secrets() {
   local file="$*" grep_output
 
   if grep_output=$(grep -v "^-" \
-    | grep -iv "\(supersecret\)\|\(ENC(\)\|\(app.encryption.password\)\|\(secretRef:\)" \
-    | grep -i "\(secret.*[:=]\)\|\(privatekey.*[:=]\)\|\(password.*[:=]\)")
+    | grep -iv '\(supersecret\)\|\(ENC(\)\|\(app.encryption.password\)\|\(secretRef:\)' \
+    | grep -iv '^ *secrets:$' \
+    | grep -i '\(secret.*[:=]\)\|\(privatekey.*[:=]\)\|\(password.*[:=]\)' \
+    | grep -iv ': \$\{.*\}$')
   then
     if ! grep -i "^$file\$" "$HOOK_DIR/.secretsok" > /dev/null 2>&1; then
       # shellcheck disable=SC2001
-      echo -e "! ❌ $file appears to contain secrets:\n $(echo "$grep_output" | sed -e 's/^/    /')"
-      echo -e "!    To disable checking this file for secrets:"
-      echo -e "!    echo $file >> .git/hooks/.secretsok\\\\n"
+      echo -e "❌ $file appears to contain secrets:\n $(echo "$grep_output" | sed -e 's/^/    /')"
+      echo -e "   To disable checking this file for secrets:"
+      echo -e "   echo $file >> .git/hooks/.secretsok\\\\n"
     fi
   fi
 }
@@ -254,7 +247,6 @@ check_diffs_for_secrets() {
 run_extra_hooks() {
   [[ -e "$HOOK_DIR/pre-commit-extras" ]] || return 0
 
-  echo "pre-commit: sourcing pre-commit-extras"
   source "$HOOK_DIR/pre-commit-extras"
 }
 
@@ -270,14 +262,19 @@ do_or_die() {
 go_no_go() {
   # Did we fail any checks?
   if [[ -n ${FAIL_MSGS} ]]; then
-    echo -e "!\n!\n! PRE-COMMIT CHECK(S) FAILED:"
-    echo -en "!\n!\n${FAIL_MSGS}"
-    echo -e "!\n! [use 'git commit --no-verify' to commit anyway]"
-    echo -e "! Remember that if you fix something, you need to stage the fix via 'git add' before committing again."
+    echo -e "One or more pre-commit checks failed."
+  fi
+
+  echo -en "$FAIL_MSGS"
+  echo -en "$PASS_MSGS"
+
+  # Did we fail any checks?
+  if [[ -n ${FAIL_MSGS} ]]; then
+    echo -e "\nRemember that if you fix something, you need to stage the fix via 'git add' before committing again."
     exit 1
   fi
 
-  echo "pre-commit: ✅ All tests pass!"
+  echo "pre-commit: ✅ All tests pass."
 }
 
 cleanup() {
