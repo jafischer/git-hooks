@@ -87,22 +87,25 @@ ensure_cargo_version_is_updated() {
 
   # Get the version from the newest commit
   our_version=$(git show "${newest_rev}:Cargo.toml" |
-    grep -E '^version\s*=\s*"[0-9]+\.[0-9]+\.[0-9]+"' |
+    grep -E '^version\s*=\s*"[0-9]+\.[0-9]+\.[0-9]+(-[0-9]{14})?"' |
     awk -F'"' '{print $2}')
 
   if [[ "$branch" == "$default_branch" ]]; then
     # Compare with the version from the parent of the earliest commit being pushed. Adding tilde (~) to oldest_rev
     # represents its parent commit.
     prev_version=$(git show "${oldest_rev}~:Cargo.toml" |
-      grep -E '^version\s*=\s*"[0-9]+\.[0-9]+\.[0-9]+"' |
+      grep -E '^version\s*=\s*"[0-9]+\.[0-9]+\.[0-9]+(-[0-9]{14})?"' |
       awk -F'"' '{print $2}')
   else
     # Not the default branch, so just compare with the version from the main branch.
     prev_version=$(git show "$default_branch:Cargo.toml" |
-      grep -E '^version\s*=\s*"[0-9]+\.[0-9]+\.[0-9]+"' |
+      grep -E '^version\s*=\s*"[0-9]+\.[0-9]+\.[0-9]+(-[0-9]{14})?"' |
       awk -F'"' '{print $2}')
   fi
 
+  # Release commits append a build timestamp to Cargo.toml; compare the semver core.
+  our_version=${our_version%%-*}
+  prev_version=${prev_version%%-*}
   read -r our_maj our_min our_patch <<< "${our_version//./ }"
   read -r prev_maj prev_min prev_patch <<< "${prev_version//./ }"
 
