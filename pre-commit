@@ -101,7 +101,9 @@ check_default_branch() {
 # Check that we're not committing into a branch that has been deleted on the remote (i.e. after just merging a PR
 # from this branch).
 check_deleted_branch() {
-  local branch=$1 fetch_head="$REPO_ROOT/.git/FETCH_HEAD"
+  local branch=$1 fetch_head
+
+  fetch_head="$(git rev-parse --git-common-dir)/FETCH_HEAD" || die "Failed to determine fetch_head"
   [[ -e "$HOOK_DIR/.commit_to_deleted_branch_ok" ]] && return
 
   # Git fetch isn't free, so only do it if there hasn't been a fetch in the last 5 minutes
