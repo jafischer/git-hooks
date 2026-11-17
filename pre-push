@@ -39,14 +39,13 @@ init() {
   PASS_MSGS=
   FAIL_MSGS=
 
-  # Git hooks are always run from the root of the repo. Sanity check:
-  if [[ ! -d .git ]]; then
+  local git_dir
+  git_dir=$(git rev-parse --git-common-dir 2>/dev/null)
+  if [[ ! -d "$git_dir" ]]; then
     echo "pre-push: '.git' directory not found; not being run from a git repo?"
     exit 1
   fi
 
-  # shellcheck disable=SC2034
-  REPO_ROOT=$(pwd)
   HOOK_DIR=$(pwd)/.git/hooks
 
   # If any command in a pipeline fails, that return code will be used as the return code of the whole pipeline
