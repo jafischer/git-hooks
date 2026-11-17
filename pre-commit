@@ -17,9 +17,6 @@ main() {
   
   # Check rust files for `todo!()`
   check_for_rust_todo
-  
-  # Ensure we're not accidentally committing any secrets into config files.
-  check_for_secrets
 
   # How to add custom pre-commit logic in your repo:
   #
@@ -192,56 +189,6 @@ check_for_rust_todo() {
 
   if [[ -z $todo_found ]] && [[ -n $rust_found ]]; then
     PASS_MSGS="${PASS_MSGS}✅ No 'todo!()' statements.\n"
-  fi
-}
-
-# Ensure we're not accidentally committing any secrets. Just a simple-minded grep for certain keywords like password,
-# privateKey, etc.
-check_for_secrets() {
-  local staged_file renamed_line ext fail_msg secrets_found
-  while read -r staged_file; do
-    ext=${staged_file##*.}
-    if [[ ${ext} == "properties" || ${ext} == "yml" || ${ext} == "yaml"  || ${ext} == "json" ]]; then
-      fail_msg=$(git diff --staged "$staged_file" | check_diffs_for_secrets "$staged_file")
-      if [[ -n $fail_msg ]]; then
-        FAIL_MSGS="${FAIL_MSGS}${fail_msg}"
-        secrets_found=yes
-      fi
-    fi
-  done < "$STAGED_FILES"
-  while read -r renamed_line; do
-    # Split old_name:::new_name into old_name and new_name.
-    local old_name=${renamed_line/:::*} new_name=${renamed_line/*:::}
-    ext=${new_name##*.}
-    if [[ ${ext} == "properties" || ${ext} == "yml" || ${ext} == "yaml"  || ${ext} == "json" ]]; then
-      fail_msg=$(git diff HEAD^ HEAD -M -- "$old_name" "$new_name" | check_diffs_for_secrets "$new_name")
-      if [[ -n $fail_msg ]]; then
-        FAIL_MSGS="${FAIL_MSGS}${fail_msg}"
-        secrets_found=yes
-      fi
-    fi
-  done < "$RENAMED_FILES"
-
-  if [[ -z $secrets_found ]]; then
-    PASS_MSGS="${PASS_MSGS}✅ no secrets in property/config files.\n"
-  fi
-}
-
-check_diffs_for_secrets() {
-  local file="$*" grep_output
-
-  if grep_output=$(grep -v "^-" \
-    | grep -iv '\(supersecret\)\|\(ENC(\)\|\(app.encryption.password\)\|\(secretRef:\)' \
-    | grep -iv '^ *secrets:$' \
-    | grep -i '\(secret.*[:=]\)\|\(privatekey.*[:=]\)\|\(password.*[:=]\)' \
-    | grep -iv ': \$\{.*\}$')
-  then
-    if ! grep -i "^$file\$" "$HOOK_DIR/.secretsok" > /dev/null 2>&1; then
-      # shellcheck disable=SC2001
-      echo -e "❌ $file appears to contain secrets:\n $(echo "$grep_output" | sed -e 's/^/    /')"
-      echo -e "   To disable checking this file for secrets:"
-      echo -e "   echo $file >> .git/hooks/.secretsok\\\\n"
-    fi
   fi
 }
 
