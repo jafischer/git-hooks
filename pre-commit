@@ -139,9 +139,7 @@ check_for_no_commit() {
   #
   special_word="${special_word}commit"
   while read -r staged_file; do
-    # Skip this script, obviously.
-    [[ $(basename "$staged_file") == pre-commit ]] && continue
-    [[ $(basename "$staged_file") == *nocommit* ]] && {
+    [[ $(basename "$staged_file") == *${special_word}* ]] && {
         FAIL_MSGS="${FAIL_MSGS}❌ $staged_file has $special_word in its name.\n"
         found=true
       }
