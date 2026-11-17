@@ -51,13 +51,14 @@ init() {
 
   # Git hooks are run from the root of the repo (no matter where you're running the command from).
   # Sanity check:
-  if [[ ! -d .git ]]; then
-    echo "pre-commit: '.git' directory not found; not being run from a git repo?"
+  local git_dir
+  git_dir=$(git rev-parse --git-common-dir 2>/dev/null)
+  if [[ ! -d "$git_dir" ]]; then
+    echo "pre-commit: Git directory not found; not being run from a git repo?"
     exit 1
   fi
 
-  REPO_ROOT=$(pwd)
-  HOOK_DIR=$(pwd)/.git/hooks
+  HOOK_DIR="$git_dir/hooks"
   STAGED_FILES=/tmp/git-staged.$$
   RENAMED_FILES=/tmp/git-renamed.$$
   PASS_MSGS=
